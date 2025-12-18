@@ -12,66 +12,73 @@
 - Docker ou autre outil pour construire des images si besoin.
 - Namespace `demo` créé pour isoler l'environnement :
 ```bash
-kubectl create ns demo
+kubectl create ns demo-rbac
 ```
 ## Partie 1 : RBAC (Role-Based Access Control)
 ### 1.1 Création d’un utilisateur fictif
 ```bash
 # Créer un utilisateur service account
-kubectl create sa alice -n demo
+kubectl create sa sa-reader -n demo-rbac
 ```
 ### 1.2 Créer un Role
 ```yaml
-# role-demo.yaml
+# role-pod-reader.yaml
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  namespace: demo
+  namespace: demo-rbac
   name: pod-reader
 rules:
 - apiGroups: [""]
   resources: ["pods"]
   verbs: ["get", "list", "watch"]
+
 ```
 Appliquer le role :
 
 ```bash
-kubectl apply -f role-demo.yaml
+kubectl apply -f role-pod-reader.yaml
 ```
 ### 1.3 Lier le Role à l’utilisateur
 ```yaml
-# rolebinding-demo.yaml
+# rolebinding-pod-reader.yaml
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: read-pods-binding
-  namespace: demo
+  namespace: demo-rbac
 subjects:
 - kind: ServiceAccount
-  name: alice
-  namespace: demo
+  name: sa-reader
+  namespace: demo-rbac
 roleRef:
   kind: Role
   name: pod-reader
   apiGroup: rbac.authorization.k8s.io
 
+
 ```
 Appliquer le binding :
 
 ```bash
-kubectl apply -f rolebinding-demo.yaml
+kubectl apply -f rolebinding-pod-reader.yaml
 ```
-### 1.4 Tester l’accès
-``` bash
-# Récupérer le token de l'utilisateur alice
-SECRET_NAME=$(kubectl get sa alice -n demo -o jsonpath="{.secrets[0].name}")
-TOKEN=$(kubectl get secret $SECRET_NAME -n demo -o jsonpath="{.data.token}" | base64 --decode)
-
-# Tester l’accès avec kubectl
-kubectl --token=$TOKEN get pods -n demo
+### 1.4 deployer un pod d etest
+```bash
+kubectl run test --image=nginx -n demo-rbac
 ```
-L’utilisateur alice peut lister les pods mais pas créer ou supprimer de ressources.
+### Vérifier les permissions avec auth can-i
+```bash
+# Actions autorisées
+kubectl auth can-i get pods --as=system:serviceaccount:demo-rbac:sa-reader -n demo-rbac
+kubectl auth can-i list pods --as=system:serviceaccount:demo-rbac:sa-reader -n demo-rbac
+kubectl auth can-i watch pods --as=system:serviceaccount:demo-rbac:sa-reader -n demo-rbac
 
+# Actions interdites
+kubectl auth can-i create pods --as=system:serviceaccount:demo-rbac:sa-reader -n demo-rbac
+kubectl auth can-i delete pods --as=system:serviceaccount:demo-rbac:sa-reader -n demo-rbac
+kubectl auth can-i update pods --as=system:serviceaccount:demo-rbac:sa-reader -n demo-rbac
+```
 ## Partie 2 : HPA (Horizontal Pod Autoscaler)
 ### 2.1 Déployer une application de test
 ```yaml
